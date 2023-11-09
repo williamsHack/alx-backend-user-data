@@ -1,59 +1,64 @@
 #!/usr/bin/env python3
+
 """
-Define class SessionDButh
+SessionDBAuth module
 """
-from .session_exp_auth import SessionExpAuth
+
+from api.v1.auth.session_exp_auth import SessionExpAuth
+from os import getenv
 from models.user_session import UserSession
+from datetime import datetime, timedelta
 
 
 class SessionDBAuth(SessionExpAuth):
     """
-    Definition of SessionDBAuth class that persists session data
-    in a database
+    SessionDBAuth class.
     """
 
     def create_session(self, user_id=None):
         """
-        Create a Session ID for a user_id
-        Args:
-           user_id (str): user id
+        create_session.
         """
-        session_id = super().create_session(user_id)
-        if not session_id:
-            return None
-        kw = {
-            "user_id": user_id,
-            "session_id": session_id
-        }
-        user = UserSession(**kw)
-        user.save()
-        return session_id
+        if user_id:
+            session_id = super().create_session(user_id)
+            if not session_id:
+                return
+            new_user = UserSession(user_id=user_id, session_id=session_id)
+            new_user.save()
+            return session_id
 
     def user_id_for_session_id(self, session_id=None):
         """
-        Returns a user ID based on a session ID
-        Args:
-            session_id (str): session ID
-        Return:
-            user id or None if session_id is None or not a string
+        user_id_for_session_id.
         """
-        user_id = UserSession.search({"session_id": session_id})
-        if user_id:
-            return user_id
-        return None
-
-    def destroy_session(self, request=None):
-        """
-        Destroy a UserSession instance based on a
-        Session ID from a request cookie
-        """
-        if request is None:
-            return False
-        session_id = self.session_cookie(request)
         if not session_id:
-            return False
-        user_session = UserSession.search({"session_id": session_id})
-        if user_session:
-            user_session[0].remove()
-            return True
+            return
+        try:
+            us_list = UserSession.search({session_id: session_id})
+            for us in us_list:
+                created_at = us.get('created_at', None)
+                if not created_at:
+                    return
+                if (datetime.now() > created_at +
+                        timedelta(seconds=self.session_duration)):
+                    return
+                return us.get('user_id', None)
+        except Exception:
+            return
+
+    def destroy_session(self, request=None) -> bool:
+        """
+        destroy_session.
+        """
+        if request:
+            session_id = self.session_cookie(request)
+            if session_id:
+                if super().destroy_session(request):
+                    try:
+                        us_list = UserSession.search({session_id: session_id})
+                        for us in us_list:
+                            us.remove()
+                            return True
+                    except Exception:
+                        return False
         return False
