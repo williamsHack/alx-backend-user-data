@@ -1,148 +1,116 @@
 #!/usr/bin/env python3
-"""API Routes for Authentication Service"""
+"""A simple Flask app with user authentication features.
+"""
+from flask import Flask, jsonify, request, abort, redirect
+
 from auth import Auth
-from flask import (Flask,
-                   jsonify,
-                   request,
-                   abort,
-                   redirect)
+
 
 app = Flask(__name__)
 AUTH = Auth()
 
 
-@app.route('/', methods=['GET'])
-def hello_world() -> str:
-    """ Base route for authentication service API """
-    msg = {"message": "Bienvenue"}
-    return jsonify(msg)
+@app.route("/", methods=["GET"], strict_slashes=False)
+def index() -> str:
+    """GET /
+    Return:
+        - The home page's payload.
+    """
+    return jsonify({"message": "Bienvenue"})
 
 
-@app.route('/users', methods=['POST'])
-def register_user() -> str:
-    """Registers a new user if it does not exist before"""
+@app.route("/users", methods=["POST"], strict_slashes=False)
+def users() -> str:
+    """POST /users
+    Return:
+        - The account creation payload.
+    """
+    email, password = request.form.get("email"), request.form.get("password")
     try:
-        email = request.form['email']
-        password = request.form['password']
-    except KeyError:
-        abort(400)
-
-    try:
-        user = AUTH.register_user(email, password)
+        AUTH.register_user(email, password)
+        return jsonify({"email": email, "message": "user created"})
     except ValueError:
         return jsonify({"message": "email already registered"}), 400
 
-    msg = {"email": email, "message": "user created"}
-    return jsonify(msg)
 
-
-@app.route('/sessions', methods=['POST'])
-def log_in() -> str:
-    """ Logs in a user and returns session ID """
-    try:
-        email = request.form['email']
-        password = request.form['password']
-    except KeyError:
-        abort(400)
-
+@app.route("/sessions", methods=["POST"], strict_slashes=False)
+def login() -> str:
+    """POST /sessions
+    Return:
+        - The account login payload.
+    """
+    email, password = request.form.get("email"), request.form.get("password")
     if not AUTH.valid_login(email, password):
         abort(401)
-
     session_id = AUTH.create_session(email)
-
-    msg = {"email": email, "message": "logged in"}
-    response = jsonify(msg)
-
+    response = jsonify({"email": email, "message": "logged in"})
     response.set_cookie("session_id", session_id)
-
     return response
 
 
-@app.route('/sessions', methods=['DELETE'])
-def log_out() -> str:
-    """Find the user with the requested session ID.
-    If the user exists destroy the session and redirect the user to GET /.
-    If the user does not exist, respond with a 403 HTTP status.
+@app.route("/sessions", methods=["DELETE"], strict_slashes=False)
+def logout() -> str:
+    """DELETE /sessions
+    Return:
+        - Redirects to home route.
     """
-    session_id = request.cookies.get("session_id", None)
-
-    if session_id is None:
-        abort(403)
-
+    session_id = request.cookies.get("session_id")
     user = AUTH.get_user_from_session_id(session_id)
-
     if user is None:
         abort(403)
-
     AUTH.destroy_session(user.id)
+    return redirect("/")
 
-    return redirect('/')
 
-
-@app.route('/profile', methods=['GET'])
+@app.route("/profile", methods=["GET"], strict_slashes=False)
 def profile() -> str:
-    """ If the user exist, respond with a 200 HTTP status and a JSON Payload
-    Otherwise respond with a 403 HTTP status.
+    """GET /profile
+    Return:
+        - The user's profile information.
     """
-    session_id = request.cookies.get("session_id", None)
-
-    if session_id is None:
-        abort(403)
-
+    session_id = request.cookies.get("session_id")
     user = AUTH.get_user_from_session_id(session_id)
-
     if user is None:
         abort(403)
-
-    msg = {"email": user.email}
-
-    return jsonify(msg), 200
+    return jsonify({"email": user.email})
 
 
-@app.route('/reset_password', methods=['POST'])
-def reset_password() -> str:
-    """If the email is not registered, respond with a 403 status code.
-    Otherwise, generate a token and respond with a
-    200 HTTP status and JSON Payload
+@app.route("/reset_password", methods=["POST"], strict_slashes=False)
+def get_reset_password_token() -> str:
+    """POST /reset_password
+    Return:
+        - The user's password reset payload.
     """
-    try:
-        email = request.form['email']
-    except KeyError:
-        abort(403)
-
+    email = request.form.get("email")
+    reset_token = None
     try:
         reset_token = AUTH.get_reset_password_token(email)
     except ValueError:
+        reset_token = None
+    if reset_token is None:
         abort(403)
-
-    msg = {"email": email, "reset_token": reset_token}
-
-    return jsonify(msg), 200
+    return jsonify({"email": email, "reset_token": reset_token})
 
 
-@app.route('/reset_password', methods=['PUT'])
+@app.route("/reset_password", methods=["PUT"], strict_slashes=False)
 def update_password() -> str:
-    """ PUT /reset_password
-    Updates password with reset token
-    Return:
-        - 400 if bad request
-        - 403 if not valid reset token
-        - 200 and JSON Payload if valid
-    """
-    try:
-        email = request.form['email']
-        reset_token = request.form['reset_token']
-        new_password = request.form['new_password']
-    except KeyError:
-        abort(400)
+    """PUT /reset_password
 
+    Return:
+        - The user's password updated payload.
+    """
+    email = request.form.get("email")
+    reset_token = request.form.get("reset_token")
+    new_password = request.form.get("new_password")
+    is_password_changed = False
     try:
         AUTH.update_password(reset_token, new_password)
+        is_password_changed = True
     except ValueError:
+        is_password_changed = False
+    if not is_password_changed:
         abort(403)
-
-    msg = {"email": email, "message": "Password updated"}
-    return jsonify(msg), 200
+    return jsonify({"email": email, "message": "Password updated"})
 
 
 if __name__ == "__main__":
