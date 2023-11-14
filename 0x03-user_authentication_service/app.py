@@ -55,19 +55,18 @@ def login():
 @app.route("/sessions", methods=["DELETE"])
 def logout():
     session_id = request.cookies.get("session_id")
-    if session_id is None:
-        return abort(403)
 
-    user = User.find_by_session_id(session_id)
+    if session_id is None:
+        return redirect("/")
+
+    user = get_active_user(session_id)
+
     if user is None:
         return abort(403)
 
-    user.session_id = None
-    user.save()
+    destroy_session(session_id)
 
-    response = redirect("/")
-    response.delete_cookie("session_id")
-    return response
+    return redirect("/")
 
 
 @app.route('/profile', methods=['GET'], strict_slashes=False)
